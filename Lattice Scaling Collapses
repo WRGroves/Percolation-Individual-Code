@@ -1,41 +1,38 @@
-#Scaling Collapse for d=2
+#Scaling Collapse for different lattice structures for d=2
 
 #Some numpy code found using numpy online database: https://numpy.org/devdocs/reference/routines.math.html
-#Attempting to estimate tau and sigma for d=2
+#Some scipy code found using scipy online database: https://docs.scipy.org/doc/scipy-1.16.2/reference/generated/scipy.ndimage.label.html
+
+#Attempting to estimate tau and sigma for different lattices
 #Plot s^tau * n(s,p) against s^simga * |p-p_c| and tries to fit the curves together
-#Takes a long time to run for high parameters
+#Takes a long time to run for large parameter values
 #---------------------------------
 import numpy as np 
 import matplotlib.pyplot as plt 
 from scipy.ndimage import label, sum
 import time
 
-pc = 0.592746 #Percolation threshold to 6sf
+#Percolation Thresholds for Square, Triangle and Honeycomb lattice respectively for d=2
+sq_pc = 0.592746
+tri_pc = 0.5
+honey_pc = 0.697040
 
 #-----------------------------
 #Parameters
-#Note: Changing any of these can vastly change the values of tau, sigma, and the plot produced.
+#Note: Changing any of these can greatly impacts the scale collapse results
 
-L = 650 #System size
-M = 1200 #No. of simulations
-a = 1.2 #Logarithmic binning size, also controls number of points on plot
+L = 300 #System size
+M = 500 #No. of simulations
+a = 1.15 #Logarithmic binning size, also controls number of points on plot
 
-numvals = 41 #How many tau and sigma are tested each time
-Lowbound = 0.15*L 
+numvals = 21 #How many tau and sigma are tested each time
+Lowbound = 0.25*L #Change for sizes smaller than around 200
 Upbound = 0.1*L**2 #Fine for almost all system sizes
 
-#Values of p to test, do not test values too close to critical value
-#pvals = [0.56, 0.565, 0.57, 0.575, 0.58, 0.585]
-#pvals = [0.52, 0.53, 0.54, 0.55, 0.56, 0.57, 0.58]
-pvals = [0.48, 0.50, 0.52, 0.54, 0.56, 0.58]
 
-
-#From initial testing and refinement (as well as theoretical limits) we have that tau and sigma likely lie in the following intervals: 
-tau = np.linspace(2, 2.2, numvals) #Tau value range
-sigma = np.linspace(0.35, 0.45, numvals) #Sigma value range
-besterror = np.inf #Sets a massive error to start, that is beaten by any sensible value of tau and sigma
-besttau = 0
-bestsigma = 0
+#Tau and sigma likely lie in the following intervals: 
+tau = np.linspace(2, 2.2, numvals)
+sigma = np.linspace(0.35, 0.45, numvals)
 
 #-----------------------------
 #Binning, done once to save time
@@ -45,23 +42,83 @@ ds = np.diff(logbins)
 smid = np.sqrt(logbins[1:] * logbins[:-1]) #Geo mean
 
 #-----------------------------
-#Computes the histogram for each p instead of having to compute a new one for each tau and sigma. 
-#This is because we only need the values of nsp and smid to get our data points.
-def nsps():
+#Brickwall (Honeycomb) Lattice Functions
+
+def neighbours(i, j, L):
+    connect = []
+    #Horizontal sites, always connected
+    if j > 0: #These conditions just make sure you don't leave the grid
+        connect.append((i, j-1))
+    if j < L-1:
+        connect.append((i, j+1))
+    #Vertical sites, depend on parity of i+j
+    if (i + j) % 2 == 0:
+        if i > 0:
+            connect.append((i-1, j)) #Connects upwards if i+j divsible by 2 (Arbitary choice, could do opposite way around)
+    else:
+        if i < L-1:
+            connect.append((i+1, j)) #Connects downwards otherwise
+    return connect #Returns neighbouring site locations
+
+    
+
+def build_cluster(i, j, grid, lw, labelnum, L):
+    checksites = [(i, j)] #List of possibly connected sites
+    while len(checksites)>0:
+        x, y = checksites.pop()
+        if lw[x, y] == 0 and grid[x, y] == True: #Checks the site does not already have a label and is occupied
+            lw[x, y] = labelnum #Assigns this site to the current cluster label
+            for nx, ny in neighbours(x, y, L): 
+                if grid[nx, ny] == True and lw[nx, ny] == 0: 
+                    checksites.append((nx, ny)) #Adds the neighbouring sites to be check list
+
+def brick_label(m):
+    L = m.shape[0]
+    lw = np.zeros_like(m, dtype=int) #Changes occupied True/False matrix to integer 0/1 matrix.
+    #(It breaks if you don't specify dtype=int as it tries to form some sort of boolean array 0/1 array instead)
+    current_label = 1
+    for i in range(L):
+        for j in range(L):
+            if m[i, j] == True and lw[i, j] == 0: #Checks the site is occupied and unlabelled 
+                build_cluster(i, j, m, lw, current_label, L) #Creates a cluster with the current label
+                current_label += 1 #Moves on to the next label
+    return lw, current_label - 1 #Returns cluster matrix and number of clusters
+
+
+#-----------------------------
+#Computes the nsp values for all of our lattice structures
+
+def span(lw): #Finds and removes spanning clusters
+    labelList = np.arange(1,lw.max() + 1) #Doesn't count the empty '0' cluster
+    vertspan = set(np.intersect1d(lw[0,:],lw[-1,:]))
+    horispan = set(np.intersect1d(lw[:,0],lw[:,-1])) #Finds vertical and horizontal spanning clusters, and removes duplicates
+    spanning = vertspan.union(horispan)
+    nonspanlist = [j for j in labelList if j not in spanning] #Removes spanning clusters
+    return nonspanlist
+
+
+def nsps(structure, pc, name):
     allnsp = []
     deltap = []
+
+    #Values of p to test, do not test values too close to critical value as it can do strange things
+    #pvals = [pc-0.001, pc-0.002, pc-0.003, pc-0.004, pc-0.005, pc-0.006]
+    #pvals = [pc-0.002, pc-0.004, pc-0.006, pc-0.008, pc-0.01, pc-0.012]
+    pvals = [pc-0.035, pc-0.03, pc-0.025, pc-0.02, pc-0.015, pc-0.01]
+    #pvals = [pc-0.06, pc-0.05, pc-0.04, pc-0.03, pc-0.02, pc-0.01]
+    #pvals = [pc-0.11, pc-0.09, pc-0.07, pc-0.05, pc-0.03, pc-0.01]
+    
     for p in pvals:
         deltap.append(abs(p-pc)) #Computes difference between p and p_c
         allarea = []
         for i in range(M): 
             z = np.random.rand(L,L) 
             m = z<p 
-            lw, num = label(m) #Sets up the cluster matrix
-            labelList = np.arange(1,lw.max() + 1) #Doesn't count the empty '0' cluster
-            vertspan = set(np.intersect1d(lw[0,:],lw[-1,:]))
-            horispan = set(np.intersect1d(lw[:,0],lw[:,-1])) #Finds vertical and horizontal spanning clusters, and removes duplicates
-            spanning = vertspan.union(horispan)
-            nonspanlist = [j for j in labelList if j not in spanning] #Removes all spanning clusters from list
+            if name == "Honey":
+                lw, num = brick_label(m) #Cluster matrix for honeycomb lattice
+            else: 
+                lw, num = label(m, structure=structure) #Cluster matrix for sqaure and triangular 
+            nonspanlist = span(lw)
             area = sum(m, lw, nonspanlist) 
             allarea.extend(area)
         allarea = np.array(allarea) #Gives area of each cluster
@@ -70,7 +127,11 @@ def nsps():
         nl, nlbins = np.histogram(allarea, bins=logbins)
         nsp = nl / (M * L**2 * ds) #Calculates n(s,p)
         allnsp.append(nsp)
-    return allnsp, deltap
+    return allnsp, deltap, pvals
+
+
+#-----------------------------
+#Scale Collapse Functions
 
 def calcaxis(tau, sigma, deltap, nsp): 
     #Need valid points as some bins have 0 clusters in and hence our nsp there is 0, causing a log(0) error
@@ -78,6 +139,7 @@ def calcaxis(tau, sigma, deltap, nsp):
     xpoints = np.log10(smid[nspfilter]**sigma * deltap)
     ypoints = np.log10(smid[nspfilter]**tau * nsp[nspfilter]) #Computes our x and y data points for each tau, sigma and p
     return xpoints, ypoints
+
 
 def scalecollapse(xvals,yvals):
     #Alls y vals should equal across different values of p 
@@ -95,42 +157,90 @@ def scalecollapse(xvals,yvals):
     meansquare = np.mean(cent**2) #Calculates meean sqaure error of plot
     return meansquare
 
+def exponents(allnsp, deltap, pvals):
+    loops = len(pvals)
+    besterror = np.inf #Sets a massive error to start, that is beaten by any sensible value of tau and sigma
+    besttau = 0
+    bestsigma = 0
+    
+    for t in tau:
+        for s in sigma:
+            xvals = []
+            yvals = []
+            for i in range(0,loops):
+                xval, yval = calcaxis(t,s,deltap[i],allnsp[i])
+                xvals.append(xval)
+                yvals.append(yval) #Gives list of y and x vals for each p
+            error = scalecollapse(xvals,yvals) #Test variance for each combination of tau and sigma
+            if error < besterror:
+                besterror = error #New benchmark to beat
+                besttau, bestsigma = t, s #stores our best values
+    
+    #Plotting the graphs
+    plt.figure(figsize=(8,6))
+    for i, p in enumerate(pvals):
+        x,y = calcaxis(besttau, bestsigma, deltap[i], allnsp[i]) #Gets x and y values for our best sigma and tau
+        plt.plot(x, y, linestyle='-', label = rf"$\Delta p = {deltap[i]:.5f}$")
+    plt.xlabel(r"$\log_{10}(s^\sigma  |p-p_c|)$", fontsize=18)
+    plt.ylabel(r"$\log_{10}(s^\tau  n(s,p))$",fontsize=18)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
+    plt.legend(fontsize=16)
+    plt.show()
+    return besttau, bestsigma, besterror
+
+
 #-----------------------------
 #Main Code:
 start = time.time()
-allnsp, deltap = nsps()
 
-for t in tau:
-    for s in sigma:
-        xvals = []
-        yvals = []
-        for i in range(0,len(pvals)):
-            xval, yval = calcaxis(t,s,deltap[i],allnsp[i])
-            xvals.append(xval)
-            yvals.append(yval) #Gives list of y and x vals for each p
-        error = scalecollapse(xvals,yvals) #Test variance for each combination of tau and sigma
-        if error < besterror:
-            besterror = error #New benchmark to beat
-            besttau, bestsigma = t, s #stores our best values
+#Square structure is the default one
+sqnsp, sqdeltap, sqpvals = nsps(None, sq_pc, "Square") 
+
+#Triangle structure idea from (Gupta et al., 2021). Cited in report
+tristructure = np.array([[1,1,0],[1,1,1],[0,1,1]])
+trinsp, trideltap, tripvals = nsps(tristructure, tri_pc, "Triangle") 
+
+#Honeycomb structure can't be directly made from scipy.ndimage as it does not have a uniform structure for all sites
+#Thus it has to be constructed manually, which is done above
+honeynsp, honeydeltap, honeypvals = nsps(None, honey_pc, "Honey")
+
+sq_tau, sq_sigma, sq_error = exponents(sqnsp, sqdeltap, sqpvals)
+tri_tau, tri_sigma, tri_error = exponents(trinsp, trideltap, tripvals)
+honey_tau, honey_sigma, honey_error = exponents(honeynsp, honeydeltap, honeypvals) #Tau and Sigma for all lattices
 
 end = time.time()
-            
-print("tau is:", besttau, "sigma is:", bestsigma)
-print("time is:", end-start, "seconds")
 
-#-----------------------------
-#Plotting:
-plt.figure(figsize=(8,6))
-for i, p in enumerate(pvals):
-    x,y = calcaxis(besttau, bestsigma, deltap[i], allnsp[i]) #Gets x and y values for our best sigma and tau
-    plt.plot(x, y, linestyle='-', label=f"p={p}")
-plt.xlabel(r"$\log_{10}(s^\sigma  |p-p_c|)$")
-plt.ylabel(r"$\log_{10}(s^\tau  n(s,p))$")
-plt.legend()
-plt.show()
- 
-#-----------------------------
-# Final Test (10-15 min each):
-# Tau: 2.03, 2.05, 2.04, 2.02, 2.05, 2.03, 2.04, 2.05, 2.03, 2.02, 2.01, 2.1, 2.06, 2.06, 2.04
-# Sigma: 0.44, 0.43, 0.435, 0.4225, 0.4225, 0.4375, 0.44, 0.43, 0.43, 0.41, 0.405, 0.4, 0.43, 0.43, 0.4375
-# => Tau = 2.04, Sigma = 0.43 (Experimentally)
+print("Square Lattice:")
+print("tau is:", sq_tau, "sigma is:", sq_sigma, "error is:", sq_error )
+print("Triangular Lattice:")
+print("tau is:", tri_tau, "sigma is:", tri_sigma, "error is:", tri_error)
+print("Honeycomb (Brickwall) Lattice:")
+print("tau is:", honey_tau, "sigma is:", honey_sigma, "error is:", honey_error)
+print("Overall time is:", end-start, "seconds")
+
+#Each simulation approximately: 1 Hour
+#Decrease paramters to make quicker (less accurate)
+
+# Square Final Test (15 Vals)
+# Tau: 2.02, 2.05, 2.00, 2.02, 2.01, 2.00, 2.04, 2.04, 2.03, 2.00, 2.01, 2.01, 2.04, 2.05, 2.05
+# Sigma: 0.405, 0.45, 0.39, 0.405, 0.44, 0.435, 0.44, 0.45, 0.41, 0.42, 0.41, 0.425, 0.45, 0.435, 0.45
+# Error: 0.00135, 0.00246, 0.00414, 0.00733, 0.00478, 0.00355, 0.00229, 
+#        0.00100, 0.00198, 0.00360, 0.00544, 0.00209, 0.00362, 0.00333, 0.00154
+# => Tau = 2.03 [0.03], Sigma = 0.43 [0.03] , Error = 0.00323
+
+# Triangular Final Test:
+# Tau: 2.00, 2.06, 2.01, 2.09, 2.02, 2.01, 2.07, 2.00, 2.06, 2.02, 2.03, 2.05, 2.06, 2.06, 2.00
+# Sigma: 0.405, 0.45, 0.405, 0.45, 0.43, 0.435, 0.45, 0.405, 0.41, 0.41, 0.415, 0.41, 0.44, 0.43, 0.405, 
+# Error: 0.00216, 0.00192, 0.00480, 0.00393, 0.00151, 0.00573, 0.00146, 
+#        0.00586, 0.00368, 0.00362, 0.00408, 0.00860, 0.00345, 0.00556, 0.00736
+# => Tau = 2.04 [0.05], Sigma = 0.42 [0.02] , Error = 0.00425
+
+# Honeycomb Final Test:
+# Tau: 2.07, 2.00, 2.00, 2.05, 2.03, 2.02, 2.00, 2.01, 2.00, 2.05, 2.05, 2.04, 2.10, 2.00, 2.06
+# Sigma: 0.45, 0.41, 0.45, 0.45, 0.45, 0.41, 0.43, 0.405, 0.405, 0.425, 0.45, 0.435, 0.45, 0.405, 0.43
+# Error: 0.00109, 0.00194, 0.00159, 0.00236, 0.00391, 0.00487, 0.00094, 
+#        0.00457, 0.00599, 0.00289, 0.00314, 0.00267, 0.00496, 0.00433, 0.00217
+# => Tau = 2.03 [0.05], Sigma = 0.43 [0.02] , Error = 0.00316
+
+#Uncertainty [] calculated by range/2 
