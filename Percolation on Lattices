@@ -1,1 +1,25 @@
+#Code adapted from "Percolation Theory using Python", cited in both individual and group project
 
+#Basic Square Cluster
+import numpy as np 
+import matplotlib.pyplot as plt 
+from scipy.ndimage import label
+
+# Sets up cluster matrix
+L = 500
+p = 0.6 
+z = np.random.rand(L,L) 
+m = z < p
+lw, num = label(m) 
+#Gives each colour a different number. Gives 0 for empty cells.
+
+# Sets up colours for clusters
+b = np.arange(1, lw.max()+1)   #Leaves 0 for black
+np.random.shuffle(b) 
+shuffledLw = np.zeros_like(lw) #Makes a zero-matrix the same size as lw
+shuffledLw[lw>0] = b[lw[lw>0]-1] #Assigns colors to clusters
+
+# Plots the image
+plt.imshow(shuffledLw, origin="lower", cmap='nipy_spectral') #Colour map that makes 0 = black (and generally better colours)
+plt.title("Sqaure Lattice with p=0.6")
+plt.show()
