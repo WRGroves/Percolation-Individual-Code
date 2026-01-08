@@ -1,1 +1,37 @@
+import networkx as nx
+import matplotlib.pyplot as plt
 
+#Lattice size
+L = 6
+
+def sq_lattice(L):
+    return nx.grid_2d_graph(L, L)
+
+def tri_lattice(L):
+    return nx.triangular_lattice_graph(L, L)
+
+def honey_lattice(L):
+    return nx.hexagonal_lattice_graph(L, L) #nx does most it for you - its great
+
+def plot_lattice(Lattice):
+    pos = {node: node for node in Lattice.nodes()} #Draws each node as its own coordinate (as they are named the same as their coordinate)
+
+    colours = []
+    for (i, j) in Lattice.nodes():
+        if (i + j) % 2 == 0:
+            colours.append("purple")
+        else:
+            colours.append("gold") #Makes an alternating purple and gold sites (easier to see neighbours)
+    nx.draw(Lattice, pos, node_color=colours, node_size=200)
+    plt.axis("equal") #Makes it look nicer
+    plt.show()
+
+#Generates all lattice structures
+square = sq_lattice(L)
+triangular = tri_lattice(L)
+honeycomb = honey_lattice(L)
+
+#Plotting
+plot_lattice(square)
+plot_lattice(triangular)
+plot_lattice(honeycomb)
