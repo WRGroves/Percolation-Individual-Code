@@ -1,0 +1,37 @@
+#Code adapted from "Percolation Theory using Python", cited in both individual and group project
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.ndimage import label, sum as ndi_sum
+
+# Parameters
+L = 300
+pv = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+
+# Random matrix
+z = np.random.rand(L, L)
+
+plt.figure(figsize=(12, 8))
+tristructure = np.array([[1,1,0],[1,1,1],[0,1,1]]) #Using triangular structure
+
+for i, p in enumerate(pv):
+    m = z < p
+    lw, num = label(m, structure = tristructure)
+    
+    #Assigns each cluster a unique color (0 = empty)
+    if lw.max() > 0:
+        b = np.arange(1, lw.max() + 1) #Leaves 0 for empty sites
+        np.random.shuffle(b) #Shuffle cluster colours
+        shuffledLw = np.zeros_like(lw)
+        shuffledLw[lw > 0] = b[lw[lw > 0] - 1]
+    else:
+        shuffledLw = lw
+
+    # Plot
+    plt.subplot(2, 3, i + 1) #Plots all 6 grids
+    plt.imshow(shuffledLw, origin="lower", cmap='nipy_spectral') #Map where 0 is assigned to black
+    plt.title("Triangular Lattice with " + f"p = {p}")
+    plt.axis('off')
+
+plt.tight_layout()
+plt.show()
