@@ -1,0 +1,76 @@
+#Code adapted from "Percolation Theory using Python", cited in both individual and group project
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.ndimage import label
+
+
+L = 300
+pv = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+
+plt.figure(figsize=(12, 8)) #Makes sure it fits
+
+def neighbours(i, j, L):
+    connect = []
+    #Horizontal sites, always connected
+    if j > 0: #These conditions just make sure you don't leave the grid
+        connect.append((i, j-1))
+    if j < L-1:
+        connect.append((i, j+1))
+    #Vertical sites, depend on parity of i+j
+    if (i + j) % 2 == 0:
+        if i > 0:
+            connect.append((i-1, j)) #Connects upwards if i+j divsible by 2 (Arbitary choice, could do opposite way around)
+    else:
+        if i < L-1:
+            connect.append((i+1, j)) #Connects downwards otherwise
+    return connect #Returns neighbouring site locations
+
+    
+
+def build_cluster(i, j, grid, lw, labelnum, L):
+    checksites = [(i, j)] #List of possibly connected sites
+    while len(checksites)>0:
+        x, y = checksites.pop()
+        if lw[x, y] == 0 and grid[x, y] == True: #Checks the site does not already have a label and is occupied
+            lw[x, y] = labelnum #Assigns this site to the current cluster label
+            for nx, ny in neighbours(x, y, L): 
+                if grid[nx, ny] == True and lw[nx, ny] == 0: 
+                    checksites.append((nx, ny)) #Adds the neighbouring sites to be check list
+
+def brick_label(m):
+    L = m.shape[0]
+    lw = np.zeros_like(m, dtype=int) #Changes occupied True/False matrix to integer 0/1 matrix.
+    #(It breaks if you don't specify dtype=int as it tries to form some sort of boolean array 0/1 array instead)
+    current_label = 1
+    for i in range(L):
+        for j in range(L):
+            if m[i, j] == True and lw[i, j] == 0: #Checks the site is occupied and unlabelled 
+                build_cluster(i, j, m, lw, current_label, L) #Creates a cluster with the current label
+                current_label += 1 #Moves on to the next label
+    return lw, current_label - 1 #Returns cluster matrix and number of clusters
+
+
+z = np.random.rand(L,L) 
+
+for i, p in enumerate(pv):
+    m = z < p
+    lw, num = brick_label(m) #Cluster matrix for honeycomb lattice
+    
+    # Assigns each cluster a unique color (0 = empty)
+    if lw.max() > 0:
+        b = np.arange(1, lw.max() + 1) 
+        np.random.shuffle(b)           
+        shuffledLw = np.zeros_like(lw)
+        shuffledLw[lw > 0] = b[lw[lw > 0] - 1]
+    else:
+        shuffledLw = lw
+
+    # Plot
+    plt.subplot(2, 3, i + 1)
+    plt.imshow(shuffledLw, origin="lower", cmap='nipy_spectral')
+    plt.title("Honeycomb Lattice with " + f"p = {p}")
+    plt.axis('off')
+
+plt.tight_layout()
+plt.show()
